@@ -19,6 +19,29 @@ The S2, S3, C3, C6 and H2 have no Classic (and the S2 has no Bluetooth at all), 
 USB-serial chip: CP2102/CP2104, CH340 or CH9102. Tested on an ESP32-D0WD-V3 (rev 3.1) board with a
 **CH340** on Windows 11.
 
+## Flash a prebuilt image (no compiling)
+
+[`firmware/`](firmware) holds the ready-built v1.0.0 images; they are also attached to the
+[GitHub release](https://github.com/giltal/ESP32_BT_Dongle/releases/latest). The easiest is the single
+merged image, written at offset **0x0**:
+
+```powershell
+pip install esptool
+python -m esptool --chip esp32 -p COM19 -b 460800 write_flash 0x0 firmware\esp32_bt_dongle_v1.0.0_merged.bin
+```
+
+Use your own port: `COMx` on Windows, `/dev/ttyUSB0` on Linux. If the board doesn't enter the
+bootloader by itself, hold **BOOT** while the flash starts.
+
+With no Python at all, Espressif's browser flasher works in Chrome or Edge:
+<https://espressif.github.io/esptool-js/>. Connect, add `esp32_bt_dongle_v1.0.0_merged.bin` at
+address `0x0`, then Program.
+
+The separate images are there too, for tools that want them: `bootloader.bin` at 0x1000,
+`partition-table.bin` at 0x8000, `esp32_bt_dongle.bin` at 0x10000 (DIO, 40 MHz). Checksums are in
+`SHA256SUMS.txt`. The images are built for 2 MB flash and run on any larger flash too. The baud is
+the default 921600; to change it at build time, build from source.
+
 ## Build and flash
 
 ESP-IDF **v5.5.6** with the ESP32 (Xtensa) tools installed:
