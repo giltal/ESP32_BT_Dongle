@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 BT Dongle – web flasher</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --muted: #5f6368; --bg: #fafafa; --card: #fff;
+          --line: #e2e2e6; --accent: #1a73e8; --ok: #1e8e3e; --bad: #c5221f; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e8eaed; --muted: #9aa0a6; --bg: #17181a; --card: #202124; --line: #3c4043;
+            --accent: #8ab4f8; --ok: #81c995; --bad: #f28b82; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
+  main { max-width: 720px; margin: 0 auto; padding: 40px 20px 60px; }
+  h1 { font-size: 1.7rem; margin: 0 0 4px; }
+  h2 { font-size: 1.15rem; margin: 0 0 10px; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; margin-bottom: 18px; }
+  ol { padding-left: 1.3em; margin: 8px 0 16px; }
+  li { margin: 4px 0; }
+  code { font: 0.9em ui-monospace, Consolas, monospace; background: color-mix(in srgb, var(--line) 50%, transparent); padding: 1px 5px; border-radius: 4px; }
+  a { color: var(--accent); }
+  button { font: inherit; font-weight: 600; color: #fff; background: var(--accent); border: 0; border-radius: 8px; padding: 9px 18px; cursor: pointer; }
+  @media (prefers-color-scheme: dark) { button { color: #202124; } }
+  button:disabled { opacity: .5; cursor: default; }
+  esp-web-install-button { --esp-tools-button-color: var(--accent); }
+  .note { color: var(--muted); font-size: .92rem; }
+  .warn { color: var(--bad); font-weight: 600; }
+  #result { margin-top: 14px; white-space: pre-wrap; font: .9rem/1.5 ui-monospace, Consolas, monospace; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  footer { color: var(--muted); font-size: .88rem; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>ESP32 BT Dongle</h1>
+  <p class="sub">Turns a classic ESP32 dev board into a dual-mode (Classic + LE) Bluetooth HCI controller over its USB port. Firmware v1.0.0.</p>
+
+  <section>
+    <h2>1. Flash the firmware</h2>
+    <ol>
+      <li>Use a board with the <b>original ESP32</b> (ESP32-WROOM-32, DevKitC, NodeMCU-32S…). S2/S3/C3/C6 won't work: they have no Classic Bluetooth.</li>
+      <li>Plug it in by USB and close any program that has its serial port open.</li>
+      <li>Click <b>Connect</b>, pick the board's port (CP210x, CH340 or CH9102), then <b>Install</b>.</li>
+    </ol>
+    <esp-web-install-button manifest="manifest.json">
+      <span slot="unsupported" class="warn">Your browser can't flash boards. Use Chrome or Edge on a desktop computer.</span>
+      <span slot="not-allowed" class="warn">Web Serial needs a secure page (https).</span>
+    </esp-web-install-button>
+    <p class="note">If it can't connect, hold the board's <b>BOOT</b> button while you click Connect.
+      After flashing, skip the "Logs &amp; Console" and Wi-Fi options: the dongle has no console.</p>
+  </section>
+
+  <section>
+    <h2>2. Check the dongle</h2>
+    <p>Sends the dongle's identify command at 921600 baud and shows the reply.</p>
+    <button id="check">Check dongle</button>
+    <div id="result"></div>
+  </section>
+
+  <section>
+    <h2>Other ways to flash</h2>
+    <p>Files and checksums are in the <a href="https://github.com/giltal/ESP32_BT_Dongle/releases/latest">latest release</a>. With Python:</p>
+    <p><code>python -m esptool --chip esp32 -p COM19 write_flash 0x0 esp32_bt_dongle_v1.0.0_merged.bin</code></p>
+    <p class="note">Use your own port: COMx on Windows, /dev/ttyUSB0 on Linux.</p>
+  </section>
+
+  <footer><a href="https://github.com/giltal/ESP32_BT_Dongle">Source, README and test script on GitHub</a></footer>
+</main>
+
+<script>
+const out = document.getElementById('result');
+const btn = document.getElementById('check');
+const hex = b => Array.from(b, x => x.toString(16).padStart(2, '0')).join(' ');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function show(text, cls) { out.className = cls || ''; out.textContent = text; }
+
+if (!('serial' in navigator)) {
+  btn.disabled = true;
+  show('Web Serial is not available in this browser. Use Chrome or Edge on a desktop computer.', 'bad');
+}
+
+btn.addEventListener('click', async () => {
+  let port;
+  try {
+    port = await navigator.serial.requestPort();
+  } catch { return; }                                    // picker closed
+  btn.disabled = true;
+  show('Opening the port…');
+  try {
+    await port.open({ baudRate: 921600, bufferSize: 4096 });
+    // DTR/RTS drive the board's reset circuit: keep both released so the ESP32 runs.
+    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+    // A fresh open may have pulsed reset: give the controller time to start, then drop the boot text.
+    show('Waiting for the controller to start…');
+    await sleep(1200);
+    const reader = port.readable.getReader();
+    const writer = port.writable.getWriter();
+    let buf = [];
+    let done = false;
+    const pump = (async () => {
+      try {
+        while (!done) {
+          const { value, done: end } = await reader.read();
+          if (end) break;
+          buf.push(...value);
+        }
+      } catch {}
+    })();
+    await sleep(300);
+    buf = [];
+    await writer.write(new Uint8Array([0x01, 0x7E, 0xFC, 0x00]));   // HCI command 0xFC7E, no params
+
+    // Look for Command Complete: 04 0E len 01 7E FC status ...
+    let reply = null;
+    for (let t = 0; t < 20 && !reply; t++) {
+      await sleep(50);
+      for (let i = 0; i + 3 < buf.length; i++) {
+        if (buf[i] === 0x04 && buf[i + 1] === 0x0E && buf[i + 4] === 0x7E && buf[i + 5] === 0xFC) {
+          const len = buf[i + 2];
+          if (buf.length >= i + 3 + len) { reply = buf.slice(i + 3, i + 3 + len); }
+          break;
+        }
+      }
+    }
+    done = true;
+    await reader.cancel(); await pump;
+    reader.releaseLock(); writer.releaseLock();
+    await port.close();
+
+    if (!reply) {
+      show('No reply. Check that the dongle firmware is flashed, that no other program has the port open, '
+         + 'and try again. Raw bytes received: ' + (buf.length ? hex(buf.slice(0, 64)) : 'none'), 'bad');
+      return;
+    }
+    const st = reply[3];
+    const p = reply.slice(4);
+    const magic = String.fromCharCode(...p.slice(0, 4));
+    if (st !== 0 || magic !== 'LXBT') {
+      show('A Bluetooth controller answered, but it is not this dongle (status 0x' + st.toString(16)
+         + '). Reply: ' + hex(reply), 'bad');
+      return;
+    }
+    const baud = p[8] | (p[9] << 8) | (p[10] << 16) | (p[11] << 24);
+    const flags = p[12];
+    show('✔ ESP32 BT Dongle found\n'
+       + `  firmware   ${p[5]}.${p[6]}.${p[7]} (protocol ${p[4]})\n`
+       + `  baud       ${baud >>> 0}\n`
+       + `  radios     ${flags & 1 ? 'Classic ' : ''}${flags & 2 ? 'LE ' : ''}${flags & 4 ? '(RTS/CTS on)' : ''}\n`
+       + `  links      ${p[13]} Classic ACL, ${p[14]} LE`, 'ok');
+  } catch (e) {
+    show('Error: ' + e.message, 'bad');
+    try { await port.close(); } catch {}
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

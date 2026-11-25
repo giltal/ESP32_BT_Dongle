@@ -21,8 +21,12 @@ USB-serial chip: CP2102/CP2104, CH340 or CH9102. Tested on an ESP32-D0WD-V3 (rev
 
 ## Flash a prebuilt image (no compiling)
 
+**Easiest: the web flasher** at <https://giltal.github.io/ESP32_BT_Dongle/flasher/>. Open it in
+Chrome or Edge, plug the board in, click Connect, then Install. The page can also check the dongle
+afterwards: it sends the identify command and shows the reply. The page is in [`flasher/`](flasher).
+
 [`firmware/`](firmware) holds the ready-built v1.0.0 images; they are also attached to the
-[GitHub release](https://github.com/giltal/ESP32_BT_Dongle/releases/latest). The easiest is the single
+[GitHub release](https://github.com/giltal/ESP32_BT_Dongle/releases/latest). From the command line, use the single
 merged image, written at offset **0x0**:
 
 ```powershell
