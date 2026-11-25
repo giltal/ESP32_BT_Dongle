@@ -1,0 +1,37 @@
+menu "ESP32 BT Dongle"
+
+config DONGLE_BAUD
+    int "HCI UART baud rate at boot"
+    range 115200 3000000
+    default 921600
+    help
+        Baud rate of the H4 link on UART0 (the pins wired to the board's USB-serial chip) right after
+        boot. The host can switch to another rate with the vendor command 0xFC7D (see README); the
+        dongle returns to this rate on every reset.
+
+config DONGLE_UART_FLOW_CTRL
+    bool "Use RTS/CTS hardware flow control"
+    default n
+    help
+        Most ESP32 dev boards wire only TX/RX to the USB-serial chip (and use its DTR/RTS lines for the
+        auto-reset circuit), so this stays off. Turn it on only when CTS/RTS really are wired.
+
+config DONGLE_UART_RTS_GPIO
+    int "RTS GPIO (output, to the host's CTS)"
+    depends on DONGLE_UART_FLOW_CTRL
+    default 19
+
+config DONGLE_UART_CTS_GPIO
+    int "CTS GPIO (input, from the host's RTS)"
+    depends on DONGLE_UART_FLOW_CTRL
+    default 23
+
+config DONGLE_LED_GPIO
+    int "Status LED GPIO (-1 = none)"
+    range -1 33
+    default 2
+    help
+        Lit while the controller runs, flickers off while the host sends. Most DevKitC / WROOM boards have a
+        blue LED on GPIO2.
+
+endmenu
