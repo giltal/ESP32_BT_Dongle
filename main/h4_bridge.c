@@ -9,7 +9,7 @@
  *
  * Controller -> host: the VHCI receive callback writes the packet (type byte included) to UART0.
  *
- * Three vendor commands are answered here (h4_bridge.h): identify, set baud, statistics.
+ * Four vendor commands are answered here (h4_bridge.h): identify, set baud, statistics, echo.
  *
  * The UART driver is installed from the bridge task, pinned to core 1, so its interrupt runs there,
  * away from the Bluetooth controller on core 0.
@@ -121,6 +121,15 @@ static void vs_stats(void)
     cmd_complete(LXBT_OP_STATS, r, sizeof r);
 }
 
+static void vs_echo(const uint8_t *p, uint8_t plen)
+{
+    uint8_t r[252];
+    if (plen > 251) plen = 251;
+    r[0] = 0x00;
+    memcpy(r + 1, p, plen);
+    cmd_complete(LXBT_OP_ECHO, r, (uint8_t)(1 + plen));
+}
+
 static void vs_set_baud(const uint8_t *p, uint8_t plen)
 {
     uint32_t b = plen >= 4 ? (uint32_t)(p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24) : 0;
@@ -155,6 +164,23 @@ static uint8_t hdr_len(uint8_t type)
     }
 }
 
+/* The ESP32 controller reboots when the local name is changed to one of about 78 bytes or more
+ * (found with tools/hci_test.py; a name of 76 is fine). Bluedroid never sends more than 64
+ * (BTM_MAX_LOC_BD_NAME_LEN), other hosts may: names are cut to 64 bytes here, on a UTF-8
+ * character boundary. */
+#define NAME_MAX_SAFE 64
+
+static void clamp_local_name(void)
+{
+    if (s_pkt[3] != 248) return;
+    uint8_t *name = s_pkt + 4;
+    if (!memchr(name, 0, NAME_MAX_SAFE + 1)) {
+        int n = NAME_MAX_SAFE;
+        while (n > 0 && (name[n] & 0xC0) == 0x80) n--;     /* don't split a multi-byte character */
+        memset(name + n, 0, 248 - n);
+    }
+}
+
 static void to_controller(void)
 {
     s_st.rx_pkts++;
@@ -162,7 +188,9 @@ static void to_controller(void)
         uint16_t op = (uint16_t)(s_pkt[1] | s_pkt[2] << 8);
         if (op == LXBT_OP_IDENTIFY) { vs_identify(); return; }
         if (op == LXBT_OP_STATS)    { vs_stats(); return; }
+        if (op == LXBT_OP_ECHO)     { vs_echo(s_pkt + 4, s_pkt[3]); return; }
         if (op == LXBT_OP_SET_BAUD) { vs_set_baud(s_pkt + 4, s_pkt[3]); return; }
+        if (op == 0x0C13) clamp_local_name();
     }
     while (!esp_vhci_host_check_send_available()) xSemaphoreTake(s_send_ok, pdMS_TO_TICKS(10));
     esp_vhci_host_send_packet(s_pkt, s_pos);

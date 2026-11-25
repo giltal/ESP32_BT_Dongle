@@ -5,8 +5,9 @@
 
 #include <stdint.h>
 
-/* Vendor commands answered by the bridge itself (OGF 0x3F, OCF 0x07C..0x07E: below Espressif's
+/* Vendor commands answered by the bridge itself (OGF 0x3F, OCF 0x07B..0x07E: below Espressif's
  * own vendor opcodes, which start at OCF 0x080, so they never reach the controller). */
+#define LXBT_OP_ECHO     0xFC7B   /* up to 251 bytes -> status, the same bytes (link test) */
 #define LXBT_OP_STATS    0xFC7C   /* -> status, 8 x u32 counters (see dongle_stats_t) */
 #define LXBT_OP_SET_BAUD 0xFC7D   /* u32 baud -> status; the new rate applies after the reply */
 #define LXBT_OP_IDENTIFY 0xFC7E   /* -> status, "LXBT", proto, fw x.y.z, u32 baud, flags, max ACL, max LE */
